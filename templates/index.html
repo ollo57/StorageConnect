@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>StorageConnect Web</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        .file-card:hover .download-btn { opacity: 1; }
+        .drag-over { border-color: #3b82f6; background-color: #eff6ff; }
+    </style>
+</head>
+<body class="bg-gray-50 min-h-screen font-sans">
+
+    <!-- Login Overlay -->
+    <div id="login-overlay" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div class="bg-white p-8 rounded-2xl shadow-xl max-w-md w-full mx-4">
+            <h1 class="text-2xl font-bold text-gray-800 mb-2 text-center">StorageConnect</h1>
+            <p class="text-gray-500 mb-6 text-center text-sm">Enter the Friend Key to access your cloud.</p>
+
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1 text-center">Friend Key</label>
+                    <input type="password" id="key-input" class="w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-center text-xl tracking-widest" placeholder="••••••••">
+                </div>
+                <div class="opacity-40 text-center">
+                    <p class="text-[10px] text-gray-400 uppercase tracking-tighter">Your Device ID: <span id="id-preview">...</span></p>
+                    <input type="hidden" id="id-input">
+                </div>
+                <button onclick="login()" class="w-full bg-blue-600 text-white font-bold py-4 rounded-xl hover:bg-blue-700 transition shadow-lg text-lg">Connect to Cloud</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Content -->
+    <div id="main-content" class="hidden pb-20">
+        <!-- Header -->
+        <header class="bg-white shadow-sm sticky top-0 z-30">
+            <div class="max-w-5xl mx-auto px-4 py-4 flex justify-between items-center">
+                <div class="flex items-center gap-2">
+                    <i class="fa-solid fa-cloud-arrow-up text-blue-600 text-2xl"></i>
+                    <span class="text-xl font-extrabold text-gray-900 tracking-tight">StorageConnect</span>
+                </div>
+                <div class="flex items-center gap-3">
+                    <button onclick="fetchFiles()" class="p-2 text-gray-400 hover:text-blue-600 transition" title="Refresh">
+                        <i class="fa-solid fa-arrows-rotate"></i>
+                    </button>
+                    <div id="user-display" class="hidden md:block bg-blue-50 text-blue-700 px-3 py-1 rounded-full text-xs font-bold"></div>
+                    <button onclick="logout()" class="text-xs font-semibold text-red-500 hover:text-red-700 transition">Logout</button>
+                </div>
+            </div>
+        </header>
+
+        <!-- Drop Zone -->
+        <div class="max-w-5xl mx-auto px-4 mt-8">
+            <div id="drop-zone" class="border-2 border-dashed border-gray-300 rounded-2xl p-12 text-center transition cursor-pointer hover:border-blue-400 bg-white shadow-sm">
+                <input type="file" id="file-input" class="hidden" multiple onchange="handleFileSelect(event)">
+                <i class="fa-solid fa-cloud-arrow-up text-5xl text-blue-500 mb-4"></i>
+                <p class="text-2xl font-bold text-gray-800">Full Backup</p>
+                <p class="text-gray-500 mt-2">Tap here to select all photos & videos</p>
+
+                <div class="mt-6 inline-flex items-center gap-2 bg-blue-50 text-blue-700 px-4 py-2 rounded-lg text-sm font-semibold">
+                    <i class="fa-solid fa-circle-info"></i>
+                    <span>iOS Tip: Choose "Browse" & tap "Select All" in the menu</span>
+                </div>
+            </div>
+
+            <!-- Uploading Progress (Enhanced) -->
+            <div id="upload-progress" class="hidden mt-6 bg-white p-6 rounded-2xl shadow-md border border-blue-100">
+                <div class="flex justify-between items-center mb-4">
+                    <div>
+                        <p id="upload-status" class="font-bold text-gray-800 text-lg">Preparing backup...</p>
+                        <p id="file-name-display" class="text-sm text-gray-500 truncate w-64 italic">Initializing...</p>
+                    </div>
+                    <div class="text-right">
+                        <span id="progress-percent" class="text-2xl font-black text-blue-600">0%</span>
+                    </div>
+                </div>
+                <div class="w-full bg-gray-100 rounded-full h-4 overflow-hidden">
+                    <div id="progress-bar" class="bg-blue-600 h-full transition-all duration-300 shadow-[0_0_10px_rgba(37,99,235,0.5)]" style="width: 0%"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- File Grid -->
+        <div class="max-w-5xl mx-auto px-4 mt-12">
+            <h2 class="text-lg font-semibold text-gray-700 mb-6">Your Backups</h2>
+            <div id="file-grid" class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-6">
+                <!-- Files loaded here -->
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let friendKey = '';
+        let deviceId = '';
+
+        window.onload = async () => {
+            const savedKey = localStorage.getItem('friendKey');
+            let savedId = localStorage.getItem('deviceId');
+
+            // --- AUTO DEVICE IDENTIFICATION ---
+            if (!savedId) {
+                // Generates a random 4-digit ID for this device
+                const randomId = Math.floor(1000 + Math.random() * 9000);
+                const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+                const prefix = isIOS ? 'iPhone' : 'Web';
+                savedId = `${prefix}-${randomId}`;
+                localStorage.setItem('deviceId', savedId);
+            }
+
+            deviceId = savedId;
+            document.getElementById('id-input').value = savedId;
+            document.getElementById('id-preview').innerText = savedId;
+
+            if (savedKey) {
+                friendKey = savedKey;
+                showDashboard();
+            }
+        };
+
+        async function verifySession(key, id) {
+            try {
+                const res = await fetch('/verify', {
+                    headers: { 'Friend-Key': key, 'Device-Id': id }
+                });
+                return res.ok;
+            } catch (e) { return false; }
+        }
+
+        function showDashboard() {
+            document.getElementById('login-overlay').classList.add('hidden');
+            document.getElementById('main-content').classList.remove('hidden');
+            document.getElementById('user-display').innerText = deviceId;
+            fetchFiles();
+        }
+
+        function login() {
+            const key = document.getElementById('key-input').value;
+            if (!key) return alert('Please enter the Friend Key');
+
+            localStorage.setItem('friendKey', key);
+            friendKey = key;
+            showDashboard();
+        }
+
+        function logout() {
+            // Only clear the Friend Key, but KEEP the Device ID
+            localStorage.removeItem('friendKey');
+            location.reload();
+        }
+
+        async function fetchFiles() {
+            const grid = document.getElementById('file-grid');
+            try {
+                const res = await fetch('/files', {
+                    headers: { 'Friend-Key': friendKey, 'Device-Id': deviceId }
+                });
+
+                if (res.status === 403) {
+                    alert("Waiting for admin approval! Your ID is: " + deviceId);
+                    return;
+                }
+
+                const files = await res.json();
+                grid.innerHTML = files.length ? '' : '<p class="col-span-full text-center text-gray-400 py-12">No files backed up yet.</p>';
+
+                files.forEach(file => {
+                    const extension = file.name.split('.').pop().toLowerCase();
+                    const isImage = ['jpg', 'jpeg', 'png', 'webp', 'gif'].includes(extension);
+                    const isVideo = ['mp4', 'mov', 'avi', 'm4v'].includes(extension);
+                    const isRawImage = ['heic', 'heif', 'raw', 'dng'].includes(extension);
+
+                    const card = document.createElement('div');
+                    card.className = 'bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden file-card relative group transition transform hover:-translate-y-1';
+
+                    let preview = `
+                        <div class="h-32 bg-gray-50 flex items-center justify-center text-gray-300">
+                            <i class="fa-solid fa-file-lines text-3xl"></i>
+                        </div>`;
+
+                    if (isImage) {
+                        preview = `<img src="/download/${file.name}?key=${friendKey}&device=${deviceId}" class="h-32 w-full object-cover" loading="lazy">`;
+                    } else if (isVideo) {
+                        preview = `
+                            <div class="h-32 bg-gray-900 flex items-center justify-center text-white">
+                                <i class="fa-solid fa-play text-xl opacity-50"></i>
+                            </div>`;
+                    } else if (isRawImage) {
+                        preview = `
+                            <div class="h-32 bg-blue-50 flex items-center justify-center text-blue-300">
+                                <i class="fa-solid fa-camera text-3xl"></i>
+                            </div>`;
+                    }
+
+                    const sizeDisplay = file.size > 1024 * 1024
+                        ? (file.size / (1024 * 1024)).toFixed(1) + ' MB'
+                        : (file.size / 1024).toFixed(0) + ' KB';
+
+                    card.innerHTML = `
+                        ${preview}
+                        <div class="p-3">
+                            <p class="text-xs font-medium text-gray-800 truncate" title="${file.name}">${file.name}</p>
+                            <p class="text-[10px] text-gray-400 mt-1">${sizeDisplay}</p>
+                        </div>
+                        <a href="/download/${file.name}?key=${friendKey}&device=${deviceId}" download class="absolute top-2 right-2 bg-black bg-opacity-50 text-white p-2 rounded-full opacity-0 download-btn transition hover:bg-blue-600">
+                            <i class="fa-solid fa-download text-xs"></i>
+                        </a>
+                    `;
+                    grid.appendChild(card);
+                });
+            } catch (e) {
+                console.error(e);
+            }
+        }
+
+        // --- Upload Logic ---
+        const dropZone = document.getElementById('drop-zone');
+        dropZone.onclick = () => document.getElementById('file-input').click();
+
+        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(e => {
+            dropZone.addEventListener(e, (ev) => {
+                ev.preventDefault();
+                if (e === 'dragover') dropZone.classList.add('drag-over');
+                else if (e === 'dragleave' || e === 'drop') dropZone.classList.remove('drag-over');
+            });
+        });
+
+        dropZone.addEventListener('drop', (ev) => {
+            uploadFiles(ev.dataTransfer.files);
+        });
+
+        function handleFileSelect(ev) {
+            uploadFiles(ev.target.files);
+        }
+
+        async function uploadFiles(files) {
+            if (!files.length) return;
+
+            const progress = document.getElementById('upload-progress');
+            const bar = document.getElementById('progress-bar');
+            const percentText = document.getElementById('progress-percent');
+            const statusText = document.getElementById('upload-status');
+            const fileNameDisplay = document.getElementById('file-name-display');
+
+            progress.classList.remove('hidden');
+            let successCount = 0;
+
+            for (let i = 0; i < files.length; i++) {
+                const formData = new FormData();
+                formData.append('file', files[i]);
+
+                statusText.innerText = `Backing up ${i + 1} of ${files.length}`;
+                fileNameDisplay.innerText = files[i].name;
+
+                try {
+                    const res = await fetch('/upload', {
+                        method: 'POST',
+                        headers: { 'Friend-Key': friendKey, 'Device-Id': deviceId },
+                        body: formData
+                    });
+
+                    if (res.ok) successCount++;
+
+                    const progressVal = Math.round(((i + 1) / files.length) * 100);
+                    bar.style.width = progressVal + '%';
+                    percentText.innerText = progressVal + '%';
+
+                } catch (e) {
+                    console.error('Error uploading ' + files[i].name, e);
+                }
+            }
+
+            statusText.innerText = "Backup Complete!";
+            fileNameDisplay.innerText = `Successfully saved ${successCount} files.`;
+
+            setTimeout(() => {
+                progress.classList.add('hidden');
+                bar.style.width = '0%';
+                fetchFiles();
+            }, 5000);
+        }
+    </script>
+</body>
+</html>
