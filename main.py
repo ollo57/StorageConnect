@@ -13,7 +13,7 @@ app = Flask(__name__,
 
 # --- CONFIGURATION ---
 BASE_UPLOAD_FOLDER = os.path.join(BASE_DIR, 'uploads')
-FRIEND_KEY = '4Xk9mZ2pQvL7rNwBjY3hFtD8sAeG6uCiWoV5qTxJ1yPkRlMbH0nEzUdOfKwZ3vX8mQpL2rNjYhB9FtD4sAeG7uCiWoV5qTxJ6yPkRlMbH1nEzUdOfKwZ'
+FRIEND_KEY = ''
 MAX_FILE_SIZE_MB = 2000 # Increased for 4K Videos and large backups
 APPROVED_DEVICES_FILE = os.path.join(BASE_DIR, 'approved_devices.json')
 SETTINGS_FILE = os.path.join(BASE_DIR, 'settings.json')
